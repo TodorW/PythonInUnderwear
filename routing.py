@@ -35,3 +35,36 @@ class Router:
 
     def __repr__(self):
         return f"<Router routes={len(self._routes)}>"
+
+
+class Blueprint:
+    """A group of routes that can be registered on a PIU app with a URL prefix."""
+
+    def __init__(self, name: str, prefix: str = ""):
+        self.name = name
+        self.prefix = prefix.rstrip("/")
+        self._routes: list[tuple[str, Callable, list[str]]] = []
+
+    def route(self, path: str, methods: list[str] = ["GET"]):
+        def decorator(fn: Callable):
+            self._routes.append((path, fn, methods))
+            return fn
+        return decorator
+
+    def get(self, path: str):
+        return self.route(path, methods=["GET"])
+
+    def post(self, path: str):
+        return self.route(path, methods=["POST"])
+
+    def put(self, path: str):
+        return self.route(path, methods=["PUT"])
+
+    def patch(self, path: str):
+        return self.route(path, methods=["PATCH"])
+
+    def delete(self, path: str):
+        return self.route(path, methods=["DELETE"])
+
+    def __repr__(self):
+        return f"<Blueprint '{self.name}' prefix='{self.prefix}' routes={len(self._routes)}>"

@@ -5,19 +5,32 @@ from urllib.parse import parse_qs, urlparse
 
 from .helpers import status_text
 from .middleware import MiddlewareStack
-from .routing import Router
+from .routing import Blueprint, Router
 from .serving import run_dev_server
+from .static import serve_static
 from .templating import TemplateEngine
 from .wrappers import Request, Response
 
 
 class PIU:
-    def __init__(self, template_dir: str = "templates"):
+    def __init__(self, template_dir: str = "templates",
+                 static_dir: str = "static",
+                 static_url: str = "/static"):
         self.router = Router()
         self.middleware = MiddlewareStack()
         self._template_dir = template_dir
+        self._static_dir = static_dir
+        self._static_url = static_url
         self._template_engine: Optional[TemplateEngine] = None
+        self._error_handlers: dict[int, Callable] = {}
 
+    # ── ASGI callable shortcut ──────────────────────────────
+
+    async def __call__(self, scope: dict, receive: Callable, send: Callable):
+        """Allows `uvicorn myapp:app` directly."""
+        await self.asgi(scope, receive, send)
+
+    # ── Routing decorators ──────────────────────────────────
 
     def route(self, path: str, methods: list[str] = ["GET"]):
         def decorator(fn: Callable):
@@ -25,21 +38,46 @@ class PIU:
             return fn
         return decorator
 
-    def get(self, path: str):
-        return self.route(path, methods=["GET"])
+    def get(self, path: str):   return self.route(path, methods=["GET"])
+    def post(self, path: str):  return self.route(path, methods=["POST"])
+    def put(self, path: str):   return self.route(path, methods=["PUT"])
+    def patch(self, path: str): return self.route(path, methods=["PATCH"])
+    def delete(self, path: str):return self.route(path, methods=["DELETE"])
 
-    def post(self, path: str):
-        return self.route(path, methods=["POST"])
+    # ── Blueprints ──────────────────────────────────────────
 
-    def put(self, path: str):
-        return self.route(path, methods=["PUT"])
+    def register(self, blueprint: Blueprint, prefix: str = None):
+        """Register a Blueprint, optionally overriding its prefix."""
+        bp_prefix = (prefix or blueprint.prefix).rstrip("/")
+        for path, handler, methods in blueprint._routes:
+            full_path = bp_prefix + ("" if path == "/" else path)
+            self.router.add_route(full_path, handler, methods)
 
-    def patch(self, path: str):
-        return self.route(path, methods=["PATCH"])
+    # ── Error handlers ──────────────────────────────────────
 
-    def delete(self, path: str):
-        return self.route(path, methods=["DELETE"])
+    def errorhandler(self, status_code: int):
+        """Register a custom error handler for an HTTP status code.
 
+        Example::
+
+            @app.errorhandler(404)
+            def not_found(request, error):
+                return Response(body="<h1>Nothing here!</h1>", status=404)
+        """
+        def decorator(fn: Callable):
+            self._error_handlers[status_code] = fn
+            return fn
+        return decorator
+
+    async def _handle_error(self, request: Request, status: int, error: Exception = None) -> Response:
+        handler = self._error_handlers.get(status)
+        if handler:
+            result = handler(request, error) if not inspect.iscoroutinefunction(handler) \
+                else await handler(request, error)
+            return result if isinstance(result, Response) else Response(body=result, status=status)
+        return Response(body=f"{status} {status_text(status)}", status=status)
+
+    # ── Template rendering ──────────────────────────────────
 
     def render(self, template_name: str, **context) -> Response:
         if self._template_engine is None:
@@ -47,25 +85,39 @@ class PIU:
         html = self._template_engine.render(template_name, **context)
         return Response(body=html, content_type="text/html")
 
+    # ── Core dispatch ───────────────────────────────────────
 
     async def _dispatch(self, request: Request) -> Response:
+        # 1. Try to serve a static file first
+        static_resp = serve_static(request.path, self._static_dir, self._static_url)
+        if static_resp is not None:
+            return static_resp
+
+        # 2. Resolve route
         handler, path_params = self.router.resolve(request.path, request.method)
 
         if handler is None:
-            return Response(body="404 Not Found", status=404)
+            return await self._handle_error(request, 404)
 
         async def call_handler(req: Request) -> Response:
             try:
-                if inspect.iscoroutinefunction(handler):
-                    result = await handler(req, **path_params)
-                else:
-                    result = handler(req, **path_params)
+                result = await handler(req, **path_params) \
+                    if inspect.iscoroutinefunction(handler) \
+                    else handler(req, **path_params)
                 return result if isinstance(result, Response) else Response(body=result)
             except Exception as e:
-                return Response(body=f"500 Internal Server Error: {e}", status=500)
+                return await self._handle_error(req, 500, e)
 
         return await self.middleware.run(request, call_handler)
 
+    # ── Shared response finalizer (applies cookie headers) ──
+
+    def _finalize(self, response: Response) -> Response:
+        for k, v in response._cookie_headers():
+            response.headers[k] = v
+        return response
+
+    # ── WSGI interface ──────────────────────────────────────
 
     def wsgi(self, environ: dict, start_response: Callable):
         parsed = urlparse(environ.get("PATH_INFO", "/"))
@@ -75,19 +127,16 @@ class PIU:
 
         headers = {
             k[5:].replace("_", "-").title(): v
-            for k, v in environ.items()
-            if k.startswith("HTTP_")
+            for k, v in environ.items() if k.startswith("HTTP_")
         }
 
         request = Request(
             method=environ.get("REQUEST_METHOD", "GET"),
-            path=parsed.path,
-            headers=headers,
-            body=body,
-            query_params=query,
+            path=parsed.path, headers=headers,
+            body=body, query_params=query,
         )
 
-        response = asyncio.run(self._dispatch(request))
+        response = self._finalize(asyncio.run(self._dispatch(request)))
         status_str = f"{response.status} {status_text(response.status)}"
         resp_headers = [("Content-Type", response.content_type)]
         for k, v in response.headers.items():
@@ -96,6 +145,7 @@ class PIU:
         start_response(status_str, resp_headers)
         return [response.body]
 
+    # ── ASGI interface ──────────────────────────────────────
 
     async def asgi(self, scope: dict, receive: Callable, send: Callable):
         if scope["type"] != "http":
@@ -114,12 +164,10 @@ class PIU:
         request = Request(
             method=scope.get("method", "GET"),
             path=scope.get("path", "/"),
-            headers=headers,
-            body=body,
-            query_params=query,
+            headers=headers, body=body, query_params=query,
         )
 
-        response = await self._dispatch(request)
+        response = self._finalize(await self._dispatch(request))
 
         await send({
             "type": "http.response.start",
@@ -131,6 +179,7 @@ class PIU:
         })
         await send({"type": "http.response.body", "body": response.body})
 
+    # ── Dev server ──────────────────────────────────────────
 
     def run(self, host: str = "127.0.0.1", port: int = 5000):
         run_dev_server(self, host=host, port=port)

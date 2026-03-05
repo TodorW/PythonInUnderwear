@@ -1,4 +1,5 @@
 import json
+from http.cookies import SimpleCookie
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -12,6 +13,7 @@ class Request:
         self.body = body
         self.query_params = query_params or {}
         self._json = None
+        self._cookies = None
 
     def json(self) -> Any:
         if self._json is None:
@@ -20,6 +22,15 @@ class Request:
 
     def form(self) -> dict:
         return parse_qs(self.body.decode("utf-8"))
+
+    @property
+    def cookies(self) -> dict:
+        if self._cookies is None:
+            raw = self.headers.get("Cookie", self.headers.get("cookie", ""))
+            sc = SimpleCookie()
+            sc.load(raw)
+            self._cookies = {k: v.value for k, v in sc.items()}
+        return self._cookies
 
     def __repr__(self):
         return f"<Request {self.method} {self.path}>"
@@ -31,6 +42,7 @@ class Response:
         self.status = status
         self.headers = headers or {}
         self.content_type = content_type
+        self._cookies = SimpleCookie()
 
         if isinstance(body, (dict, list)):
             self.body = json.dumps(body).encode("utf-8")
@@ -51,6 +63,24 @@ class Response:
         r = cls(body="", status=status)
         r.headers["Location"] = location
         return r
+
+    def set_cookie(self, key: str, value: str, max_age: int = None,
+                   path: str = "/", httponly: bool = True,
+                   secure: bool = False, samesite: str = "Lax"):
+        self._cookies[key] = value
+        m = self._cookies[key]
+        if max_age is not None:
+            m["max-age"] = max_age
+        m["path"] = path
+        m["httponly"] = httponly
+        m["secure"] = secure
+        m["samesite"] = samesite
+
+    def delete_cookie(self, key: str, path: str = "/"):
+        self.set_cookie(key, "", max_age=0, path=path)
+
+    def _cookie_headers(self) -> list[tuple]:
+        return [("Set-Cookie", m.OutputString()) for m in self._cookies.values()]
 
     def __repr__(self):
         return f"<Response {self.status}>"
