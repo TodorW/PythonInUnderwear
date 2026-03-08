@@ -41,5 +41,11 @@ def run_dev_server(app, host: str = "127.0.0.1", port: int = 5000):
         def log_message(self, fmt, *args):
             print(f"[PIU] {self.address_string()} - {fmt % args}")
 
+    server = HTTPServer((host, port), Handler)
     print(f"[PIU] 🩲 Dev server running on http://{host}:{port}  (Ctrl+C to stop)")
-    HTTPServer((host, port), Handler).serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[PIU] Shutting down. Bye 🩲")
+    finally:
+        server.server_close()

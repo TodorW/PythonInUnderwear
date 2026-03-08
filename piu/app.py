@@ -3,10 +3,14 @@ import inspect
 from typing import Callable, Optional
 from urllib.parse import parse_qs, urlparse
 
+from .auth import current_user, is_authenticated, login_user, logout_user, require_auth
+from .csrf import CSRFMiddleware, csrf_input
 from .helpers import status_text
 from .middleware import MiddlewareStack
+from .ratelimit import RateLimitMiddleware, rate_limit
 from .routing import Blueprint, Router
 from .serving import run_dev_server
+from .sessions import SessionMiddleware
 from .static import serve_static
 from .templating import TemplateEngine
 from .wrappers import Request, Response
@@ -24,13 +28,13 @@ class PIU:
         self._template_engine: Optional[TemplateEngine] = None
         self._error_handlers: dict[int, Callable] = {}
 
-    # ── ASGI callable shortcut ──────────────────────────────
+    
 
     async def __call__(self, scope: dict, receive: Callable, send: Callable):
         """Allows `uvicorn myapp:app` directly."""
         await self.asgi(scope, receive, send)
 
-    # ── Routing decorators ──────────────────────────────────
+    
 
     def route(self, path: str, methods: list[str] = ["GET"]):
         def decorator(fn: Callable):
@@ -44,7 +48,7 @@ class PIU:
     def patch(self, path: str): return self.route(path, methods=["PATCH"])
     def delete(self, path: str):return self.route(path, methods=["DELETE"])
 
-    # ── Blueprints ──────────────────────────────────────────
+    
 
     def register(self, blueprint: Blueprint, prefix: str = None):
         """Register a Blueprint, optionally overriding its prefix."""
@@ -53,7 +57,7 @@ class PIU:
             full_path = bp_prefix + ("" if path == "/" else path)
             self.router.add_route(full_path, handler, methods)
 
-    # ── Error handlers ──────────────────────────────────────
+    
 
     def errorhandler(self, status_code: int):
         """Register a custom error handler for an HTTP status code.
@@ -77,7 +81,7 @@ class PIU:
             return result if isinstance(result, Response) else Response(body=result, status=status)
         return Response(body=f"{status} {status_text(status)}", status=status)
 
-    # ── Template rendering ──────────────────────────────────
+    
 
     def render(self, template_name: str, **context) -> Response:
         if self._template_engine is None:
@@ -85,15 +89,15 @@ class PIU:
         html = self._template_engine.render(template_name, **context)
         return Response(body=html, content_type="text/html")
 
-    # ── Core dispatch ───────────────────────────────────────
+    
 
     async def _dispatch(self, request: Request) -> Response:
-        # 1. Try to serve a static file first
+        
         static_resp = serve_static(request.path, self._static_dir, self._static_url)
         if static_resp is not None:
             return static_resp
 
-        # 2. Resolve route
+        
         handler, path_params = self.router.resolve(request.path, request.method)
 
         if handler is None:
@@ -110,14 +114,14 @@ class PIU:
 
         return await self.middleware.run(request, call_handler)
 
-    # ── Shared response finalizer (applies cookie headers) ──
+    
 
     def _finalize(self, response: Response) -> Response:
         for k, v in response._cookie_headers():
             response.headers[k] = v
         return response
 
-    # ── WSGI interface ──────────────────────────────────────
+    
 
     def wsgi(self, environ: dict, start_response: Callable):
         parsed = urlparse(environ.get("PATH_INFO", "/"))
@@ -145,7 +149,7 @@ class PIU:
         start_response(status_str, resp_headers)
         return [response.body]
 
-    # ── ASGI interface ──────────────────────────────────────
+    
 
     async def asgi(self, scope: dict, receive: Callable, send: Callable):
         if scope["type"] != "http":
@@ -179,7 +183,7 @@ class PIU:
         })
         await send({"type": "http.response.body", "body": response.body})
 
-    # ── Dev server ──────────────────────────────────────────
+    
 
     def run(self, host: str = "127.0.0.1", port: int = 5000):
         run_dev_server(self, host=host, port=port)

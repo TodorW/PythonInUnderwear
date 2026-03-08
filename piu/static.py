@@ -3,7 +3,6 @@ import os
 
 from .wrappers import Response
 
-# Extend mime types for common web assets
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
 mimetypes.add_type("image/svg+xml", ".svg")
@@ -20,10 +19,8 @@ def serve_static(path: str, static_dir: str, url_prefix: str = "/static") -> Res
     if not path.startswith(url_prefix):
         return None
 
-    # Strip the URL prefix to get the relative file path
     rel = path[len(url_prefix):].lstrip("/")
 
-    # Prevent directory traversal attacks
     static_dir = os.path.realpath(static_dir)
     file_path = os.path.realpath(os.path.join(static_dir, rel))
 
