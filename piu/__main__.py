@@ -1,1 +1,3 @@
-print("Python In Underwear 🩲 — use 'python example_app.py' to run your app.")
+from piu.cli import main
+
+main()

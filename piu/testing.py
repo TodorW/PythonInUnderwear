@@ -13,15 +13,16 @@ class TestClient:
     def _extract_cookies(self, response: Response):
         for key, val in response.headers.items():
             if key.lower() == "set-cookie":
-                parts = val.split(";")
-                if parts:
-                    name, _, value = parts[0].strip().partition("=")
+                for cookie_str in val.split("\n"):
+                    parts = [p.strip() for p in cookie_str.split(";")]
+                    if not parts:
+                        continue
+                    name, _, value = parts[0].partition("=")
                     max_age = None
                     for part in parts[1:]:
-                        p = part.strip().lower()
-                        if p.startswith("max-age="):
+                        if part.lower().startswith("max-age="):
                             try:
-                                max_age = int(p[8:])
+                                max_age = int(part.split("=", 1)[1])
                             except ValueError:
                                 pass
                     if max_age == 0:

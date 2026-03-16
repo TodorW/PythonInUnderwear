@@ -8,12 +8,16 @@ from .config import Config
 from .csrf import CSRFMiddleware, csrf_input
 from .helpers import status_text
 from .middleware import MiddlewareStack
+from .openapi import SWAGGER_HTML, generate_schema
+from .plugins import Plugin
 from .ratelimit import RateLimitMiddleware, rate_limit
 from .routing import Blueprint, Router
 from .serving import run_dev_server
 from .sessions import SessionMiddleware
 from .static import serve_static
+from .tasks import BackgroundTasks
 from .templating import TemplateEngine
+from .websocket import WebSocket, WebSocketRouter
 from .wrappers import Request, Response
 
 
@@ -24,12 +28,16 @@ class PIU:
                  config: dict = None):
         self.config = Config(config)
         self.router = Router()
+        self.ws_router = WebSocketRouter()
         self.middleware = MiddlewareStack()
         self._template_dir = template_dir or self.config["TEMPLATE_DIR"]
         self._static_dir   = static_dir   or self.config["STATIC_DIR"]
         self._static_url   = static_url   or self.config["STATIC_URL"]
         self._template_engine: Optional[TemplateEngine] = None
         self._error_handlers: dict[int, Callable] = {}
+        self._plugins: list[Plugin] = []
+        self._docs_enabled = False
+        self._docs_title = "PIU API"
 
     async def __call__(self, scope: dict, receive: Callable, send: Callable):
         await self.asgi(scope, receive, send)
@@ -45,6 +53,35 @@ class PIU:
     def put(self, path: str):    return self.route(path, methods=["PUT"])
     def patch(self, path: str):  return self.route(path, methods=["PATCH"])
     def delete(self, path: str): return self.route(path, methods=["DELETE"])
+
+    def ws(self, path: str):
+        def decorator(fn: Callable):
+            self.ws_router.add(path, fn)
+            return fn
+        return decorator
+
+    def enable_docs(self, title: str = "PIU API", path: str = "/docs"):
+        self._docs_enabled = True
+        self._docs_title = title
+        self._docs_path = path
+
+        @self.get(path)
+        def _swagger(request: Request):
+            html = SWAGGER_HTML.format(title=title)
+            return Response(body=html, content_type="text/html")
+
+        @self.get("/openapi.json")
+        def _schema(request: Request):
+            schema = generate_schema(
+                self.router,
+                title=title,
+                version=self.config.get("VERSION", "0.1.0"),
+            )
+            return Response.json(schema)
+
+    def register_plugin(self, plugin: Plugin):
+        plugin.setup(self)
+        self._plugins.append(plugin)
 
     def register(self, blueprint: Blueprint, prefix: str = None):
         bp_prefix = (prefix or blueprint.prefix).rstrip("/")
@@ -82,12 +119,16 @@ class PIU:
         if handler is None:
             return await self._handle_error(request, 404)
 
+        request.background_tasks = BackgroundTasks()
+
         async def call_handler(req: Request) -> Response:
             try:
                 result = await handler(req, **path_params) \
                     if inspect.iscoroutinefunction(handler) \
                     else handler(req, **path_params)
-                return result if isinstance(result, Response) else Response(body=result)
+                resp = result if isinstance(result, Response) else Response(body=result)
+                await req.background_tasks.run_all()
+                return resp
             except Exception as e:
                 return await self._handle_error(req, 500, e)
 
@@ -95,7 +136,11 @@ class PIU:
 
     def _finalize(self, response: Response) -> Response:
         for k, v in response._cookie_headers():
-            response.headers[k] = v
+            existing = response.headers.get(k)
+            if existing:
+                response.headers[k] = existing + "\n" + v
+            else:
+                response.headers[k] = v
         return response
 
     def wsgi(self, environ: dict, start_response: Callable):
@@ -125,6 +170,19 @@ class PIU:
         return [response.body]
 
     async def asgi(self, scope: dict, receive: Callable, send: Callable):
+        if scope["type"] == "websocket":
+            handler, params = self.ws_router.resolve(scope.get("path", "/"))
+            if handler is None:
+                await send({"type": "websocket.close", "code": 4004})
+                return
+            ws = WebSocket(scope, receive, send)
+            await send({"type": "websocket.accept"})
+            if inspect.iscoroutinefunction(handler):
+                await handler(ws, **params)
+            else:
+                handler(ws, **params)
+            return
+
         if scope["type"] != "http":
             return
 

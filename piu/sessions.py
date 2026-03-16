@@ -1,3 +1,11 @@
+"""
+Session middleware for PIU.
+Sessions are stored as signed, base64-encoded JSON cookies.
+No server-side storage needed — the cookie IS the session.
+
+Requires: pip install cryptography
+"""
+
 import base64
 import hashlib
 import hmac
@@ -41,7 +49,6 @@ class SessionMiddleware:
         self._secure = secure
         self._samesite = samesite
 
-
     def _sign(self, data: str) -> str:
         sig = hmac.new(self._secret, data.encode(), hashlib.sha256).hexdigest()
         payload = base64.urlsafe_b64encode(data.encode()).decode()
@@ -58,16 +65,13 @@ class SessionMiddleware:
         except Exception:
             return None
 
-
     async def __call__(self, request: Request, next: Callable) -> Response:
-        
         raw = request.cookies.get(self.COOKIE_NAME)
         data = self._unsign(raw) if raw else None
         request.session = Session(data or {})
 
         response = await next(request)
 
-        
         if request.session.modified:
             payload = json.dumps(dict(request.session), separators=(",", ":"))
             token = self._sign(payload)

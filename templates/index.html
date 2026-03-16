@@ -54,311 +54,66 @@
       z-index: 0;
     }
 
-    .orb {
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(80px);
-      pointer-events: none;
-      z-index: 0;
-    }
+    .orb { position: fixed; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; }
+    .orb-1 { width: 500px; height: 500px; top: -180px; left: 50%; transform: translateX(-50%); background: radial-gradient(circle, #6366f118, transparent 70%); }
+    .orb-2 { width: 300px; height: 300px; bottom: 20%; right: -100px; background: radial-gradient(circle, #a78bfa0c, transparent 70%); }
 
-    .orb-1 {
-      width: 500px; height: 500px;
-      top: -180px; left: 50%;
-      transform: translateX(-50%);
-      background: radial-gradient(circle, #6366f118, transparent 70%);
-    }
+    .container { position: relative; z-index: 1; max-width: 860px; margin: 0 auto; padding: 0 24px; }
 
-    .orb-2 {
-      width: 300px; height: 300px;
-      bottom: 20%; right: -100px;
-      background: radial-gradient(circle, #a78bfa0c, transparent 70%);
-    }
+    nav { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; }
 
-    .container {
-      position: relative;
-      z-index: 1;
-      max-width: 860px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    nav {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 28px 0;
-    }
-
-    .logo {
-      font-size: 15px;
-      font-weight: 700;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      letter-spacing: -.2px;
-    }
-
-    .logo-icon {
-      width: 30px; height: 30px;
-      background: linear-gradient(135deg, #6366f1, #a78bfa);
-      border-radius: 8px;
-      display: grid;
-      place-items: center;
-      font-size: 15px;
-    }
-
+    .logo { font-size: 15px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; letter-spacing: -.2px; }
+    .logo-icon { width: 30px; height: 30px; background: linear-gradient(135deg, #6366f1, #a78bfa); border-radius: 8px; display: grid; place-items: center; font-size: 15px; }
     .nav-right { display: flex; align-items: center; gap: 12px; }
 
-    .badge {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 20px;
-      background: #6366f110;
-      color: #818cf8;
-      border: 1px solid #6366f122;
-      letter-spacing: .04em;
-    }
+    .badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; padding: 4px 10px; border-radius: 20px; background: #6366f110; color: #818cf8; border: 1px solid #6366f122; letter-spacing: .04em; }
 
-    .hero {
-      text-align: center;
-      padding: 96px 0 72px;
-    }
+    .hero { text-align: center; padding: 96px 0 72px; }
 
-    .hero-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
-      border-radius: 20px;
-      border: 1px solid var(--border2);
-      background: var(--surface);
-      font-size: 12px;
-      color: var(--muted2);
-      margin-bottom: 32px;
-      letter-spacing: .02em;
-    }
+    .hero-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border2); background: var(--surface); font-size: 12px; color: var(--muted2); margin-bottom: 32px; letter-spacing: .02em; }
+    .hero-pill span { width: 6px; height: 6px; background: #a3e635; border-radius: 50%; box-shadow: 0 0 6px #a3e63566; animation: pulse 2s infinite; }
 
-    .hero-pill span {
-      width: 6px; height: 6px;
-      background: #a3e635;
-      border-radius: 50%;
-      box-shadow: 0 0 6px #a3e63566;
-      animation: pulse 2s infinite;
-    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: .4; }
-    }
+    h1 { font-size: clamp(40px, 7vw, 72px); font-weight: 900; letter-spacing: -3px; line-height: 1.05; color: #fff; margin-bottom: 24px; }
+    h1 em { font-style: normal; background: linear-gradient(135deg, #6366f1 20%, #a78bfa 80%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 
-    h1 {
-      font-size: clamp(40px, 7vw, 72px);
-      font-weight: 900;
-      letter-spacing: -3px;
-      line-height: 1.05;
-      color: #fff;
-      margin-bottom: 24px;
-    }
+    .tagline { font-size: 17px; color: var(--muted2); max-width: 440px; margin: 0 auto 48px; line-height: 1.7; font-weight: 300; }
 
-    h1 em {
-      font-style: normal;
-      background: linear-gradient(135deg, #6366f1 20%, #a78bfa 80%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
+    .hero-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
-    .tagline {
-      font-size: 17px;
-      color: var(--muted2);
-      max-width: 440px;
-      margin: 0 auto 48px;
-      line-height: 1.7;
-      font-weight: 300;
-    }
-
-    .hero-actions {
-      display: flex;
-      gap: 10px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 11px 22px;
-      border-radius: 9px;
-      font-size: 14px;
-      font-weight: 600;
-      text-decoration: none;
-      transition: all .15s;
-      cursor: pointer;
-      border: none;
-      font-family: 'Inter', sans-serif;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, #6366f1, #7c3aed);
-      color: #fff;
-      box-shadow: 0 1px 20px #6366f133;
-    }
-
-    .btn-primary:hover {
-      box-shadow: 0 1px 28px #6366f155;
-      transform: translateY(-1px);
-    }
-
-    .btn-ghost {
-      background: var(--surface2);
-      color: var(--muted2);
-      border: 1px solid var(--border2);
-    }
-
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 22px; border-radius: 9px; font-size: 14px; font-weight: 600; text-decoration: none; transition: all .15s; cursor: pointer; border: none; font-family: 'Inter', sans-serif; }
+    .btn-primary { background: linear-gradient(135deg, #6366f1, #7c3aed); color: #fff; box-shadow: 0 1px 20px #6366f133; }
+    .btn-primary:hover { box-shadow: 0 1px 28px #6366f155; transform: translateY(-1px); }
+    .btn-ghost { background: var(--surface2); color: var(--muted2); border: 1px solid var(--border2); }
     .btn-ghost:hover { color: var(--text); border-color: #333; transform: translateY(-1px); }
 
-    .code-wrap {
-      margin: 72px 0;
-      border-radius: 16px;
-      border: 1px solid var(--border2);
-      overflow: hidden;
-      background: var(--surface);
-    }
-
-    .code-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface2);
-    }
-
+    .code-wrap { margin: 72px 0; border-radius: 16px; border: 1px solid var(--border2); overflow: hidden; background: var(--surface); }
+    .code-header { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface2); }
     .dot-r { width:10px; height:10px; border-radius:50%; background:#ff5f57; }
     .dot-y { width:10px; height:10px; border-radius:50%; background:#ffbd2e; }
     .dot-g { width:10px; height:10px; border-radius:50%; background:#28c840; }
+    .code-filename { margin-left: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+    .code-body { padding: 28px 32px; overflow-x: auto; }
+    pre { font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.9; color: #cdd6f4; }
+    .kw { color: #cba6f7; } .fn { color: #89b4fa; } .str { color: #a6e3a1; } .dec { color: #f38ba8; } .cm { color: #313244; }
 
-    .code-filename {
-      margin-left: 6px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      color: var(--muted);
-    }
+    .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); text-align: center; margin-bottom: 28px; }
 
-    .code-body {
-      padding: 28px 32px;
-      overflow-x: auto;
-    }
-
-    pre {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      line-height: 1.9;
-      color: #cdd6f4;
-    }
-
-    .kw  { color: #cba6f7; }
-    .fn  { color: #89b4fa; }
-    .str { color: #a6e3a1; }
-    .dec { color: #f38ba8; }
-    .cm  { color: #313244; }
-    .num { color: #fab387; }
-
-    .section-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      color: var(--muted);
-      text-align: center;
-      margin-bottom: 28px;
-    }
-
-    .features {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1px;
-      background: var(--border);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      overflow: hidden;
-      margin-bottom: 80px;
-    }
-
-    .feature {
-      background: var(--surface);
-      padding: 28px 24px;
-      transition: background .2s;
-    }
-
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 80px; }
+    .feature { background: var(--surface); padding: 28px 24px; transition: background .2s; }
     .feature:hover { background: var(--surface2); }
+    .feature-icon { font-size: 22px; margin-bottom: 14px; display: block; }
+    .feature-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+    .feature-desc { font-size: 12px; color: var(--muted2); line-height: 1.65; }
 
-    .feature-icon {
-      font-size: 22px;
-      margin-bottom: 14px;
-      display: block;
-    }
-
-    .feature-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #fff;
-      margin-bottom: 8px;
-    }
-
-    .feature-desc {
-      font-size: 12px;
-      color: var(--muted2);
-      line-height: 1.65;
-    }
-
-    .stats {
-      display: flex;
-      gap: 1px;
-      background: var(--border);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-      margin-bottom: 80px;
-    }
-
-    .stat {
-      flex: 1;
-      background: var(--surface);
-      padding: 24px;
-      text-align: center;
-    }
-
-    .stat-val {
-      font-size: 28px;
-      font-weight: 800;
-      color: #fff;
-      letter-spacing: -1px;
-      margin-bottom: 4px;
-    }
-
-    .stat-val span {
-      background: linear-gradient(135deg, #6366f1, #a78bfa);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
+    .stats { display: flex; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 80px; }
+    .stat { flex: 1; background: var(--surface); padding: 24px; text-align: center; }
+    .stat-val { font-size: 28px; font-weight: 800; color: #fff; letter-spacing: -1px; margin-bottom: 4px; }
+    .stat-val span { background: linear-gradient(135deg, #6366f1, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .stat-label { font-size: 12px; color: var(--muted2); }
 
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 28px 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 12px;
-      color: var(--muted);
-    }
-
+    footer { border-top: 1px solid var(--border); padding: 28px 0; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
     .footer-right { display: flex; gap: 16px; }
     .footer-right a { color: var(--muted); text-decoration: none; }
     .footer-right a:hover { color: var(--muted2); }
@@ -383,14 +138,14 @@
         Python In Underwear
       </div>
       <div class="nav-right">
-        <span class="badge">v0.3</span>
+        <span class="badge">v{{ version }}</span>
       </div>
     </nav>
 
     <div class="hero">
       <div class="hero-pill">
         <span></span>
-        v0.3 — Now in development
+        v{{ version }} — Now in development
       </div>
       <h1>The web framework<br>with <em>no pants on</em></h1>
       <p class="tagline">Lightweight, Flask-inspired, sync &amp; async. No magic. No bloat. Just Python doing its thing.</p>
@@ -467,7 +222,7 @@ app.<span class="fn">run</span>() <span class="cm"># http://127.0.0.1:5000</span
         <div class="stat-label">Required dependencies</div>
       </div>
       <div class="stat">
-        <div class="stat-val"><span>0.3</span></div>
+        <div class="stat-val"><span>{{ version }}</span></div>
         <div class="stat-label">Current version</div>
       </div>
       <div class="stat">
@@ -481,7 +236,7 @@ app.<span class="fn">run</span>() <span class="cm"># http://127.0.0.1:5000</span
     </div>
 
     <footer>
-      <span>🩲 Python In Underwear — v0.3</span>
+      <span>🩲 Python In Underwear — v{{ version }}</span>
       <div class="footer-right">
         <a href="https://github.com">GitHub</a>
         <a href="https://pypi.org">PyPI</a>

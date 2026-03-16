@@ -1,8 +1,11 @@
+import asyncio
+import piu
 from piu import (
     PIU, Blueprint, Request, Response,
     SessionMiddleware, CSRFMiddleware,
     RateLimitMiddleware, rate_limit,
     require_auth, login_user, logout_user, current_user,
+    Plugin, BackgroundTasks, WebSocket,
 )
 
 app = PIU()
@@ -26,7 +29,6 @@ def logger(request: Request, next):
 
 app.middleware.use(logger)
 
-
 @app.errorhandler(404)
 def not_found(request, error):
     return Response(body="<h1>404 — Nothing here 🩲</h1>", status=404)
@@ -35,10 +37,26 @@ def not_found(request, error):
 def server_error(request, error):
     return Response(body=f"<h1>500 — {error}</h1>", status=500)
 
+class HealthPlugin(Plugin):
+    name = "health"
+
+    def setup(self, app):
+        @app.get("/health")
+        def health(request: Request):
+            return Response.json({"status": "ok", "version": piu.__version__})
+
+app.register_plugin(HealthPlugin())
+app.enable_docs(title="PIU Example API")
+
+async def send_welcome_email(username: str):
+    await asyncio.sleep(0.1)
+    print(f"[TASK] Welcome email sent to {username}")
+
+def write_audit_log(action: str, path: str):
+    print(f"[TASK] Audit: {action} {path}")
 
 @app.get("/")
 def index(request: Request):
-    import piu
     return app.render("index.html", version=piu.__version__)
 
 @app.get("/login")
@@ -60,6 +78,8 @@ def login(request: Request):
     password = form.get("password", [None])[0]
     if username == "alice" and password == "secret":
         login_user(request, {"id": 1, "username": username, "role": "admin"})
+        request.background_tasks.add(send_welcome_email, username)
+        request.background_tasks.add(write_audit_log, "login", request.path)
         return Response.redirect("/dashboard")
     return Response(body="<h1>Bad credentials</h1>", status=401)
 
@@ -79,7 +99,6 @@ def dashboard(request: Request):
 def admin(request: Request):
     return Response(body="<h1>Admin panel</h1>")
 
-
 api = Blueprint("api", prefix="/api")
 
 @api.get("/me")
@@ -94,6 +113,22 @@ def post_data(request: Request):
 
 app.register(api)
 
+@app.ws("/ws/echo")
+async def ws_echo(ws: WebSocket):
+    while True:
+        msg = await ws.receive_text()
+        if msg is None:
+            break
+        await ws.send_text(f"echo: {msg}")
+
+@app.ws("/ws/chat/<room>")
+async def ws_chat(ws: WebSocket, room: str):
+    await ws.send_text(f"Joined room: {room}")
+    while True:
+        msg = await ws.receive_text()
+        if msg is None:
+            break
+        await ws.send_text(f"[{room}] {msg}")
 
 if __name__ == "__main__":
     app.run()

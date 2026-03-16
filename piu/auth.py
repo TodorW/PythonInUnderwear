@@ -1,3 +1,36 @@
+"""
+Auth utilities for PIU.
+
+Provides:
+  - @require_auth           — decorator that guards a route, redirects or 401s if not authed
+  - @require_auth(role=...) — additionally checks request.user["role"]
+  - login_user(request, user_data)   — store user in session
+  - logout_user(request)             — clear user from session
+  - current_user(request)            — retrieve user dict from session (or None)
+
+Requires SessionMiddleware to be registered.
+
+Example::
+
+    @app.post("/login")
+    def login(request):
+        user = db.check_credentials(request.json())
+        if not user:
+            return Response(body="Bad credentials", status=401)
+        login_user(request, {"id": user.id, "role": "admin"})
+        return Response.redirect("/dashboard")
+
+    @app.get("/dashboard")
+    @require_auth
+    def dashboard(request):
+        return Response(body=f"Hello {current_user(request)['id']}")
+
+    @app.get("/admin")
+    @require_auth(role="admin")
+    def admin_panel(request):
+        ...
+"""
+
 import functools
 import inspect
 from typing import Callable
@@ -5,9 +38,6 @@ from typing import Callable
 from .wrappers import Request, Response
 
 SESSION_USER_KEY = "_auth_user"
-
-
-
 
 def login_user(request: Request, user_data: dict):
     """Store user data in the session."""
@@ -37,9 +67,6 @@ def _require_session(request: Request):
             "Auth helpers require SessionMiddleware. "
             "Register it before using @require_auth."
         )
-
-
-
 
 def require_auth(fn: Callable = None, *, role: str = None,
                  redirect_to: str = None, status: int = 401):
@@ -76,7 +103,6 @@ def require_auth(fn: Callable = None, *, role: str = None,
 
         return wrapper
 
-    
     if fn is not None:
         return decorator(fn)
     return decorator
