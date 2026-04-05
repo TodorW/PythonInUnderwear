@@ -140,6 +140,12 @@ class PIU:
         if static_resp is not None:
             return static_resp
 
+        # Let middleware handle OPTIONS (CORS preflight) before routing
+        if request.method == "OPTIONS":
+            async def _options_passthrough(req: Request) -> Response:
+                return Response(body="", status=204)
+            return await self.middleware.run(request, _options_passthrough)
+
         handler, path_params = self.router.resolve(request.path, request.method)
 
         if handler is None:

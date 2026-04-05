@@ -39,6 +39,9 @@ from .wrappers import Request, Response
 
 SESSION_USER_KEY = "_auth_user"
 
+
+# ── Session helpers ──────────────────────────────────────────
+
 def login_user(request: Request, user_data: dict):
     """Store user data in the session."""
     _require_session(request)
@@ -67,6 +70,9 @@ def _require_session(request: Request):
             "Auth helpers require SessionMiddleware. "
             "Register it before using @require_auth."
         )
+
+
+# ── @require_auth decorator ──────────────────────────────────
 
 def require_auth(fn: Callable = None, *, role: str = None,
                  redirect_to: str = None, status: int = 401):
@@ -103,6 +109,7 @@ def require_auth(fn: Callable = None, *, role: str = None,
 
         return wrapper
 
+    # Support both @require_auth and @require_auth(role="admin")
     if fn is not None:
         return decorator(fn)
     return decorator

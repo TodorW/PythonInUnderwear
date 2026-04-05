@@ -49,6 +49,8 @@ class SessionMiddleware:
         self._secure = secure
         self._samesite = samesite
 
+    # ── Signing ─────────────────────────────────────────────
+
     def _sign(self, data: str) -> str:
         sig = hmac.new(self._secret, data.encode(), hashlib.sha256).hexdigest()
         payload = base64.urlsafe_b64encode(data.encode()).decode()
@@ -65,7 +67,10 @@ class SessionMiddleware:
         except Exception:
             return None
 
+    # ── Middleware callable ──────────────────────────────────
+
     async def __call__(self, request: Request, next: Callable) -> Response:
+        # Load session from cookie
         raw = request.cookies.get(self.COOKIE_NAME)
         data = self._unsign(raw) if raw else None
         request.session = Session(data or {})
@@ -73,14 +78,18 @@ class SessionMiddleware:
         response = await next(request)
 
         if request.session.modified:
-            payload = json.dumps(dict(request.session), separators=(",", ":"))
-            token = self._sign(payload)
-            response.set_cookie(
-                self.COOKIE_NAME, token,
-                max_age=self._max_age,
-                httponly=self._httponly,
-                secure=self._secure,
-                samesite=self._samesite,
-            )
+            current = dict(request.session)
+            if current:
+                payload = json.dumps(current, separators=(",", ":"))
+                token = self._sign(payload)
+                response.set_cookie(
+                    self.COOKIE_NAME, token,
+                    max_age=self._max_age,
+                    httponly=self._httponly,
+                    secure=self._secure,
+                    samesite=self._samesite,
+                )
+            else:
+                response.delete_cookie(self.COOKIE_NAME)
 
         return response

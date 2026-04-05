@@ -90,6 +90,9 @@ class TestClient:
     def delete(self, path: str, headers: dict = None) -> "TestResponse":
         return self._request("DELETE", path, headers=headers)
 
+    def options(self, path: str, headers: dict = None) -> "TestResponse":
+        return self._request("OPTIONS", path, headers=headers)
+
     def close(self):
         self._loop.close()
 

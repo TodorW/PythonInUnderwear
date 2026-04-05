@@ -21,7 +21,7 @@ class CORSMiddleware:
         return origin in self._origins
 
     async def __call__(self, request: Request, next: Callable) -> Response:
-        origin = request.headers.get("Origin", "")
+        origin = request.headers.get("Origin", request.headers.get("origin", ""))
 
         if request.method == "OPTIONS":
             resp = Response(body="", status=204)

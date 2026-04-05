@@ -36,7 +36,7 @@ def test_404():
 def test_path_param():
     app = make_app()
 
-    @app.get("/hello/<n>")
+    @app.get("/hello/<name>")
     def hello(req, name):
         return Response.json({"name": name})
 
