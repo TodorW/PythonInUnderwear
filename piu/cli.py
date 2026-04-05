@@ -10,18 +10,24 @@ from piu import (
     SessionMiddleware, CSRFMiddleware,
     RateLimitMiddleware,
 )
+from piu.cors import CORSMiddleware
+from piu.logging import LoggingMiddleware
 
 app = PIU()
 
 app.config.from_env_file(".env")
 app.config.load_env()
 
+app.middleware.use(LoggingMiddleware())
 app.middleware.use(RateLimitMiddleware(limit=100, window=60))
 app.middleware.use(SessionMiddleware(
     secret_key=app.config.get("SECRET_KEY", "dev-secret"),
     max_age=3600,
 ))
+app.middleware.use(CORSMiddleware(allow_origins=["*"]))
 app.middleware.use(CSRFMiddleware())
+
+app.enable_docs(title="{name} API")
 
 
 @app.errorhandler(404)
@@ -34,6 +40,11 @@ def index(request: Request):
     return Response(body="<h1>Hello from PIU 🩲</h1>")
 
 
+@app.get("/health")
+def health(request: Request):
+    return Response.json({{"status": "ok", "version": piu.__version__}})
+
+
 if __name__ == "__main__":
     app.run()
 '''
@@ -43,6 +54,15 @@ DEBUG=true
 HOST=127.0.0.1
 PORT=5000
 SECRET_KEY=change-me-in-production
+VERSION=0.1.0
+"""
+
+_ENV_EXAMPLE_TEMPLATE = """\
+DEBUG=true
+HOST=127.0.0.1
+PORT=5000
+SECRET_KEY=your-secret-key-here
+VERSION=0.1.0
 """
 
 _HTML_TEMPLATE = """\
@@ -65,20 +85,45 @@ __pycache__/
 .env
 *.egg-info/
 dist/
+build/
 .venv/
 """
 
 _TEST_TEMPLATE = '''\
-from piu.testing import TestClient
+from piu.testing import PIUTestClient
 from app import app
 
-client = TestClient(app)
+client = PIUTestClient(app)
 
 
 def test_index():
     resp = client.get("/")
     assert resp.status == 200
+
+
+def test_health():
+    resp = client.get("/health")
+    assert resp.status == 200
+    assert resp.json()["status"] == "ok"
 '''
+
+
+def _load_app():
+    if not os.path.isfile("app.py"):
+        print("[PIU] Error: no app.py found in the current directory.")
+        sys.exit(1)
+    sys.path.insert(0, os.getcwd())
+    try:
+        import importlib
+        module = importlib.import_module("app")
+    except Exception as e:
+        print(f"[PIU] Failed to import app.py: {e}")
+        sys.exit(1)
+    app = getattr(module, "app", None)
+    if app is None:
+        print("[PIU] Error: app.py must define an 'app' variable.")
+        sys.exit(1)
+    return app
 
 
 def cmd_new(args):
@@ -95,8 +140,9 @@ def cmd_new(args):
         os.makedirs(d)
 
     files = {
-        os.path.join(base, "app.py"): _APP_TEMPLATE,
+        os.path.join(base, "app.py"): _APP_TEMPLATE.replace("{name}", name),
         os.path.join(base, ".env"): _ENV_TEMPLATE,
+        os.path.join(base, ".env.example"): _ENV_EXAMPLE_TEMPLATE,
         os.path.join(base, "templates", "index.html"): _HTML_TEMPLATE,
         os.path.join(base, ".gitignore"): _GITIGNORE_TEMPLATE,
         os.path.join(base, "tests", "test_app.py"): _TEST_TEMPLATE,
@@ -111,22 +157,7 @@ def cmd_new(args):
 
 
 def cmd_run(args):
-    if not os.path.isfile("app.py"):
-        print("[PIU] Error: no app.py found in the current directory.")
-        sys.exit(1)
-
-    sys.path.insert(0, os.getcwd())
-    try:
-        import importlib
-        module = importlib.import_module("app")
-    except Exception as e:
-        print(f"[PIU] Failed to import app.py: {e}")
-        sys.exit(1)
-
-    app = getattr(module, "app", None)
-    if app is None:
-        print("[PIU] Error: app.py must define an 'app' variable.")
-        sys.exit(1)
+    app = _load_app()
 
     if os.path.isfile(".env"):
         app.config.from_env_file(".env")
@@ -137,6 +168,31 @@ def cmd_run(args):
     reload = args.reload or app.config.get("DEBUG", False)
 
     app.run(host=host, port=int(port), reload=reload)
+
+
+def cmd_routes(args):
+    app = _load_app()
+
+    if not app.router._routes:
+        print("[PIU] No routes registered.")
+        return
+
+    print(f"\n  {'METHOD':<12} {'PATH':<40} HANDLER")
+    print("  " + "─" * 70)
+    for route in app.router._routes:
+        pattern = route.regex.pattern.lstrip("^").rstrip("$")
+        import re
+        pattern = re.sub(r"\(\?P<(\w+)>[^)]+\)", r"<\1>", pattern)
+        methods = ", ".join(route.methods)
+        print(f"  {methods:<12} {pattern:<40} {route.handler.__name__}")
+    print()
+
+    if app.ws_router._routes:
+        print(f"  {'WS':<12} {'PATH':<40} HANDLER")
+        print("  " + "─" * 70)
+        for route in app.ws_router._routes:
+            print(f"  {'WS':<12} {route.path:<40} {route.handler.__name__}")
+        print()
 
 
 def main():
@@ -152,6 +208,9 @@ def main():
     p_run.add_argument("--port", default=None, type=int)
     p_run.add_argument("--reload", action="store_true")
     p_run.set_defaults(func=cmd_run)
+
+    p_routes = sub.add_parser("routes", help="List all registered routes")
+    p_routes.set_defaults(func=cmd_routes)
 
     args = parser.parse_args()
     args.func(args)

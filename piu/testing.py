@@ -1,6 +1,7 @@
 import asyncio
 import json as _json
-from urllib.parse import urlencode
+from http.cookies import SimpleCookie
+from urllib.parse import urlencode, parse_qs
 
 from .wrappers import Request, Response
 
@@ -9,26 +10,20 @@ class TestClient:
     def __init__(self, app):
         self._app = app
         self._cookies: dict[str, str] = {}
+        self._loop = asyncio.new_event_loop()
 
     def _extract_cookies(self, response: Response):
         for key, val in response.headers.items():
             if key.lower() == "set-cookie":
                 for cookie_str in val.split("\n"):
-                    parts = [p.strip() for p in cookie_str.split(";")]
-                    if not parts:
-                        continue
-                    name, _, value = parts[0].partition("=")
-                    max_age = None
-                    for part in parts[1:]:
-                        if part.lower().startswith("max-age="):
-                            try:
-                                max_age = int(part.split("=", 1)[1])
-                            except ValueError:
-                                pass
-                    if max_age == 0:
-                        self._cookies.pop(name.strip(), None)
-                    else:
-                        self._cookies[name.strip()] = value.strip()
+                    sc = SimpleCookie()
+                    sc.load(cookie_str.strip())
+                    for name, morsel in sc.items():
+                        max_age = morsel.get("max-age")
+                        if max_age is not None and str(max_age) == "0":
+                            self._cookies.pop(name, None)
+                        else:
+                            self._cookies[name] = morsel.value
 
     def _cookie_header(self) -> str:
         return "; ".join(f"{k}={v}" for k, v in self._cookies.items())
@@ -39,22 +34,25 @@ class TestClient:
                  query: dict = None) -> "TestResponse":
         hdrs = dict(headers or {})
         if self._cookies:
-            hdrs.setdefault("Cookie", self._cookie_header())
+            hdrs["Cookie"] = self._cookie_header()
+
+        # Always normalize query values to lists, matching parse_qs output
+        normalized: dict = {}
+        for k, v in (query or {}).items():
+            if isinstance(v, list):
+                normalized[k] = v
+            else:
+                normalized[k] = [str(v)]
 
         req = Request(
             method=method,
             path=path,
             headers=hdrs,
             body=body,
-            query_params=query or {},
+            query_params=normalized,
         )
 
-        loop = asyncio.new_event_loop()
-        try:
-            raw: Response = loop.run_until_complete(self._app._dispatch(req))
-        finally:
-            loop.close()
-
+        raw: Response = self._loop.run_until_complete(self._app._dispatch(req))
         raw = self._app._finalize(raw)
         self._extract_cookies(raw)
         return TestResponse(raw)
@@ -91,6 +89,16 @@ class TestClient:
 
     def delete(self, path: str, headers: dict = None) -> "TestResponse":
         return self._request("DELETE", path, headers=headers)
+
+    def close(self):
+        self._loop.close()
+
+    def __del__(self):
+        try:
+            if not self._loop.is_closed():
+                self._loop.close()
+        except Exception:
+            pass
 
 
 class TestResponse:

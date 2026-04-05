@@ -1,12 +1,16 @@
 import asyncio
 import inspect
+import traceback
 from typing import Callable, Optional
 from urllib.parse import parse_qs, urlparse
 
 from .auth import current_user, is_authenticated, login_user, logout_user, require_auth
+from .cache import cache, clear_cache
 from .config import Config
+from .cors import CORSMiddleware
 from .csrf import CSRFMiddleware, csrf_input
 from .helpers import status_text
+from .logging import LoggingMiddleware, logger
 from .middleware import MiddlewareStack
 from .openapi import SWAGGER_HTML, generate_schema
 from .plugins import Plugin
@@ -17,6 +21,8 @@ from .sessions import SessionMiddleware
 from .static import serve_static
 from .tasks import BackgroundTasks
 from .templating import TemplateEngine
+from .uploads import parse_multipart
+from .validation import validate
 from .websocket import WebSocket, WebSocketRouter
 from .wrappers import Request, Response
 
@@ -38,9 +44,12 @@ class PIU:
         self._plugins: list[Plugin] = []
         self._docs_enabled = False
         self._docs_title = "PIU API"
+        self._docs_path = "/docs"
 
     async def __call__(self, scope: dict, receive: Callable, send: Callable):
         await self.asgi(scope, receive, send)
+
+    # ── Routing ──────────────────────────────────────────────
 
     def route(self, path: str, methods: list[str] = ["GET"]):
         def decorator(fn: Callable):
@@ -59,6 +68,43 @@ class PIU:
             self.ws_router.add(path, fn)
             return fn
         return decorator
+
+    def register(self, blueprint: Blueprint, prefix: str = None):
+        bp_prefix = (prefix or blueprint.prefix).rstrip("/")
+        for path, handler, methods in blueprint._routes:
+            full_path = bp_prefix + ("" if path == "/" else path)
+            self.router.add_route(full_path, handler, methods)
+
+    def register_plugin(self, plugin: Plugin):
+        plugin.setup(self)
+        self._plugins.append(plugin)
+
+    # ── Error handlers ────────────────────────────────────────
+
+    def errorhandler(self, status_code: int):
+        def decorator(fn: Callable):
+            self._error_handlers[status_code] = fn
+            return fn
+        return decorator
+
+    async def _handle_error(self, request: Request, status: int,
+                             error: Exception = None) -> Response:
+        handler = self._error_handlers.get(status)
+        if handler:
+            result = handler(request, error) if not inspect.iscoroutinefunction(handler) \
+                else await handler(request, error)
+            return result if isinstance(result, Response) else Response(body=result, status=status)
+
+        # Debug mode shows full traceback
+        if error and self.config.get("DEBUG", False):
+            tb = traceback.format_exc()
+            body = f"<pre style='font-family:monospace;padding:20px'>" \
+                   f"<b>{status} {status_text(status)}</b>\n\n{tb}</pre>"
+            return Response(body=body, status=status, content_type="text/html")
+
+        return Response(body=f"{status} {status_text(status)}", status=status)
+
+    # ── OpenAPI ───────────────────────────────────────────────
 
     def enable_docs(self, title: str = "PIU API", path: str = "/docs"):
         self._docs_enabled = True
@@ -79,35 +125,15 @@ class PIU:
             )
             return Response.json(schema)
 
-    def register_plugin(self, plugin: Plugin):
-        plugin.setup(self)
-        self._plugins.append(plugin)
-
-    def register(self, blueprint: Blueprint, prefix: str = None):
-        bp_prefix = (prefix or blueprint.prefix).rstrip("/")
-        for path, handler, methods in blueprint._routes:
-            full_path = bp_prefix + ("" if path == "/" else path)
-            self.router.add_route(full_path, handler, methods)
-
-    def errorhandler(self, status_code: int):
-        def decorator(fn: Callable):
-            self._error_handlers[status_code] = fn
-            return fn
-        return decorator
-
-    async def _handle_error(self, request: Request, status: int, error: Exception = None) -> Response:
-        handler = self._error_handlers.get(status)
-        if handler:
-            result = handler(request, error) if not inspect.iscoroutinefunction(handler) \
-                else await handler(request, error)
-            return result if isinstance(result, Response) else Response(body=result, status=status)
-        return Response(body=f"{status} {status_text(status)}", status=status)
+    # ── Templates ─────────────────────────────────────────────
 
     def render(self, template_name: str, **context) -> Response:
         if self._template_engine is None:
             self._template_engine = TemplateEngine(self._template_dir)
         html = self._template_engine.render(template_name, **context)
         return Response(body=html, content_type="text/html")
+
+    # ── Dispatch ──────────────────────────────────────────────
 
     async def _dispatch(self, request: Request) -> Response:
         static_resp = serve_static(request.path, self._static_dir, self._static_url)
@@ -120,6 +146,14 @@ class PIU:
             return await self._handle_error(request, 404)
 
         request.background_tasks = BackgroundTasks()
+
+        # Parse multipart uploads and attach to request
+        ct = request.headers.get("Content-Type", request.headers.get("content-type", ""))
+        if "multipart/form-data" in ct:
+            request.form_fields, request.files = parse_multipart(request.body, ct)
+        else:
+            request.form_fields = {}
+            request.files = {}
 
         async def call_handler(req: Request) -> Response:
             try:
@@ -134,6 +168,8 @@ class PIU:
 
         return await self.middleware.run(request, call_handler)
 
+    # ── Finalize ──────────────────────────────────────────────
+
     def _finalize(self, response: Response) -> Response:
         for k, v in response._cookie_headers():
             existing = response.headers.get(k)
@@ -142,6 +178,8 @@ class PIU:
             else:
                 response.headers[k] = v
         return response
+
+    # ── WSGI ──────────────────────────────────────────────────
 
     def wsgi(self, environ: dict, start_response: Callable):
         parsed = urlparse(environ.get("PATH_INFO", "/"))
@@ -168,6 +206,8 @@ class PIU:
 
         start_response(status_str, resp_headers)
         return [response.body]
+
+    # ── ASGI ──────────────────────────────────────────────────
 
     async def asgi(self, scope: dict, receive: Callable, send: Callable):
         if scope["type"] == "websocket":
@@ -213,6 +253,8 @@ class PIU:
             ],
         })
         await send({"type": "http.response.body", "body": response.body})
+
+    # ── Dev server ────────────────────────────────────────────
 
     def run(self, host: str = None, port: int = None, reload: bool = None):
         run_dev_server(

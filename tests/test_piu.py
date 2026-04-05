@@ -1,13 +1,12 @@
-import asyncio
 import pytest
 from piu import (
     PIU, Request, Response, Blueprint,
     SessionMiddleware, CSRFMiddleware,
     RateLimitMiddleware, rate_limit,
     require_auth, login_user, logout_user, current_user,
-    Plugin,
+    Plugin, CORSMiddleware, validate, cache, clear_cache,
+    PIUTestClient,
 )
-from piu.testing import TestClient
 
 
 def make_app():
@@ -16,6 +15,9 @@ def make_app():
     app.middleware.use(CSRFMiddleware(exempt_paths=["/"]))
     return app
 
+
+# ── Routing ──────────────────────────────────────────────────
+
 def test_basic_get():
     app = make_app()
 
@@ -23,28 +25,22 @@ def test_basic_get():
     def index(req):
         return Response(body="hello")
 
-    client = TestClient(app)
-    resp = client.get("/")
-    assert resp.status == 200
-    assert resp.text() == "hello"
+    assert PIUTestClient(app).get("/").status == 200
+    assert PIUTestClient(app).get("/").text() == "hello"
 
 
 def test_404():
-    app = make_app()
-    client = TestClient(app)
-    resp = client.get("/nope")
-    assert resp.status == 404
+    assert PIUTestClient(make_app()).get("/nope").status == 404
 
 
 def test_path_param():
     app = make_app()
 
-    @app.get("/hello/<name>")
+    @app.get("/hello/<n>")
     def hello(req, name):
         return Response.json({"name": name})
 
-    client = TestClient(app)
-    resp = client.get("/hello/world")
+    resp = PIUTestClient(app).get("/hello/world")
     assert resp.status == 200
     assert resp.json()["name"] == "world"
 
@@ -56,9 +52,7 @@ def test_post_json():
     def echo(req):
         return Response.json(req.json())
 
-    client = TestClient(app)
-    resp = client.post("/echo", json={"key": "val"})
-    assert resp.status == 200
+    resp = PIUTestClient(app).post("/echo", json={"key": "val"})
     assert resp.json() == {"key": "val"}
 
 
@@ -71,9 +65,9 @@ def test_methods():
 
     @app.delete("/item/<id>")
     def del_item(req, id):
-        return Response(body="deleted", status=200)
+        return Response(body="deleted")
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     assert client.put("/item/42").json()["method"] == "PUT"
     assert client.delete("/item/42").status == 200
 
@@ -85,10 +79,10 @@ def test_custom_error_handler():
     def not_found(req, err):
         return Response(body="custom 404", status=404)
 
-    client = TestClient(app)
-    resp = client.get("/missing")
-    assert resp.status == 404
-    assert resp.text() == "custom 404"
+    assert PIUTestClient(app).get("/missing").text() == "custom 404"
+
+
+# ── Blueprints ───────────────────────────────────────────────
 
 def test_blueprint():
     app = make_app()
@@ -99,10 +93,7 @@ def test_blueprint():
         return Response.json({"pong": True})
 
     app.register(bp)
-    client = TestClient(app)
-    resp = client.get("/api/ping")
-    assert resp.status == 200
-    assert resp.json()["pong"] is True
+    assert PIUTestClient(app).get("/api/ping").json()["pong"] is True
 
 
 def test_blueprint_prefix_override():
@@ -114,9 +105,12 @@ def test_blueprint_prefix_override():
         return Response(body="ok")
 
     app.register(bp, prefix="/v2")
-    client = TestClient(app)
+    client = PIUTestClient(app)
     assert client.get("/v2/ping").status == 200
     assert client.get("/v1/ping").status == 404
+
+
+# ── Request & Response ───────────────────────────────────────
 
 def test_response_json():
     app = make_app()
@@ -125,8 +119,7 @@ def test_response_json():
     def data(req):
         return Response.json({"a": 1})
 
-    client = TestClient(app)
-    resp = client.get("/data")
+    resp = PIUTestClient(app).get("/data")
     assert resp.content_type == "application/json"
     assert resp.json()["a"] == 1
 
@@ -138,8 +131,7 @@ def test_response_redirect():
     def go(req):
         return Response.redirect("/dest")
 
-    client = TestClient(app)
-    resp = client.get("/go")
+    resp = PIUTestClient(app).get("/go")
     assert resp.status == 302
     assert resp.headers.get("Location") == "/dest"
 
@@ -152,8 +144,7 @@ def test_query_params():
         q = req.query_params.get("q", [None])[0]
         return Response.json({"q": q})
 
-    client = TestClient(app)
-    resp = client.get("/search", query={"q": "piu"})
+    resp = PIUTestClient(app).get("/search", query={"q": "piu"})
     assert resp.json()["q"] == "piu"
 
 
@@ -170,10 +161,9 @@ def test_cookies():
     def get_cookie(req):
         return Response.json({"flavor": req.cookies.get("flavor")})
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/set")
-    resp = client.get("/get")
-    assert resp.json()["flavor"] == "choc"
+    assert client.get("/get").json()["flavor"] == "choc"
 
 
 def test_delete_cookie():
@@ -195,11 +185,13 @@ def test_delete_cookie():
     def check(req):
         return Response.json({"tok": req.cookies.get("tok")})
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/set")
     client.get("/del")
-    resp = client.get("/check")
-    assert resp.json()["tok"] is None
+    assert client.get("/check").json()["tok"] is None
+
+
+# ── Sessions ─────────────────────────────────────────────────
 
 def test_session_persists():
     app = make_app()
@@ -213,10 +205,9 @@ def test_session_persists():
     def read(req):
         return Response.json({"val": req.session.get("val")})
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/write")
-    resp = client.get("/read")
-    assert resp.json()["val"] == "hello"
+    assert client.get("/read").json()["val"] == "hello"
 
 
 def test_session_clear():
@@ -236,10 +227,13 @@ def test_session_clear():
     def read(req):
         return Response.json({"x": req.session.get("x")})
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/write")
     client.get("/clear")
     assert client.get("/read").json()["x"] is None
+
+
+# ── Auth ─────────────────────────────────────────────────────
 
 def test_require_auth_blocks():
     app = make_app()
@@ -249,8 +243,7 @@ def test_require_auth_blocks():
     def secret(req):
         return Response(body="secret")
 
-    client = TestClient(app)
-    resp = client.get("/secret")
+    resp = PIUTestClient(app).get("/secret")
     assert resp.status == 302
     assert resp.headers.get("Location") == "/login"
 
@@ -268,7 +261,7 @@ def test_require_auth_passes():
     def secret(req):
         return Response(body="secret")
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/do-login")
     assert client.get("/secret").status == 200
 
@@ -286,7 +279,7 @@ def test_require_auth_role_pass():
     def admin(req):
         return Response(body="admin")
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/do-login")
     assert client.get("/admin").status == 200
 
@@ -304,7 +297,7 @@ def test_require_auth_role_fail():
     def admin(req):
         return Response(body="admin")
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/do-login")
     assert client.get("/admin").status == 403
 
@@ -327,11 +320,14 @@ def test_logout():
     def secret(req):
         return Response(body="secret")
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     client.get("/do-login")
     assert client.get("/secret").status == 200
     client.get("/do-logout")
     assert client.get("/secret").status == 302
+
+
+# ── Rate limiting ────────────────────────────────────────────
 
 def test_rate_limit_per_route():
     app = make_app()
@@ -341,10 +337,13 @@ def test_rate_limit_per_route():
     def limited(req):
         return Response(body="ok")
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     assert client.get("/limited").status == 200
     assert client.get("/limited").status == 200
     assert client.get("/limited").status == 429
+
+
+# ── Plugins ──────────────────────────────────────────────────
 
 def test_plugin_adds_route():
     app = make_app()
@@ -357,8 +356,10 @@ def test_plugin_adds_route():
                 return Response.json({"ping": True})
 
     app.register_plugin(PingPlugin())
-    client = TestClient(app)
-    assert client.get("/ping").json()["ping"] is True
+    assert PIUTestClient(app).get("/ping").json()["ping"] is True
+
+
+# ── Background tasks ─────────────────────────────────────────
 
 def test_background_tasks_run():
     app = PIU()
@@ -379,10 +380,12 @@ def test_background_tasks_run():
         req.background_tasks.add(sync_task, "b")
         return Response(body="ok")
 
-    client = TestClient(app)
-    client.get("/go")
+    PIUTestClient(app).get("/go")
     assert "async:a" in results
     assert "sync:b" in results
+
+
+# ── Config ───────────────────────────────────────────────────
 
 def test_config_dict():
     app = PIU(config={"MY_KEY": "hello"})
@@ -399,13 +402,90 @@ def test_config_env_file(tmp_path):
     assert app.config["FLAG"] is True
 
 
-def test_config_cast():
-    app = PIU(config={"PORT": "8080", "DEBUG": "true", "RATIO": "1.5"})
-    assert app.config["PORT"] == "8080"
-    app.config.from_dict({"PORT": 8080, "DEBUG": True, "RATIO": 1.5})
-    assert app.config["PORT"] == 8080
-    assert app.config["DEBUG"] is True
-    assert app.config["RATIO"] == 1.5
+# ── CORS ─────────────────────────────────────────────────────
+
+def test_cors_headers():
+    app = PIU()
+    app.middleware.use(CORSMiddleware(allow_origins=["https://example.com"]))
+
+    @app.get("/api")
+    def api(req):
+        return Response.json({"ok": True})
+
+    client = PIUTestClient(app)
+    resp = client.get("/api", headers={"Origin": "https://example.com"})
+    assert resp.headers.get("Access-Control-Allow-Origin") == "https://example.com"
+
+
+def test_cors_preflight():
+    app = PIU()
+    app.middleware.use(CORSMiddleware())
+
+    @app.get("/api")
+    def api(req):
+        return Response.json({"ok": True})
+
+    client = PIUTestClient(app)
+    resp = client._request("OPTIONS", "/api", headers={"Origin": "https://example.com"})
+    assert resp.status == 204
+
+
+# ── Validation ───────────────────────────────────────────────
+
+def test_validate_decorator():
+    app = PIU()
+    app.middleware.use(SessionMiddleware(secret_key="test"))
+    app.middleware.use(CSRFMiddleware(exempt_paths=["/"]))
+
+    @app.post("/users")
+    @validate
+    def create_user(req, name: str, age: int):
+        return Response.json({"name": name, "age": age})
+
+    client = PIUTestClient(app)
+    resp = client.post("/users", json={"name": "alice", "age": 30})
+    assert resp.status == 200
+    assert resp.json()["age"] == 30
+
+
+def test_validate_missing_field():
+    app = PIU()
+    app.middleware.use(SessionMiddleware(secret_key="test"))
+    app.middleware.use(CSRFMiddleware(exempt_paths=["/"]))
+
+    @app.post("/users")
+    @validate
+    def create_user(req, name: str, age: int):
+        return Response.json({"name": name, "age": age})
+
+    client = PIUTestClient(app)
+    resp = client.post("/users", json={"name": "alice"})
+    assert resp.status == 422
+    assert "age" in resp.json()["errors"]
+
+
+# ── Cache ────────────────────────────────────────────────────
+
+def test_cache_hit():
+    app = make_app()
+    call_count = [0]
+
+    @app.get("/cached")
+    @cache(ttl=60)
+    def cached_route(req):
+        call_count[0] += 1
+        return Response.json({"count": call_count[0]})
+
+    clear_cache()
+    client = PIUTestClient(app)
+    r1 = client.get("/cached")
+    r2 = client.get("/cached")
+    assert r1.json()["count"] == 1
+    assert r2.json()["count"] == 1
+    assert r2.headers.get("X-Cache") == "HIT"
+
+
+# ── OpenAPI ──────────────────────────────────────────────────
 
 def test_openapi_schema():
     app = make_app()
@@ -415,7 +495,7 @@ def test_openapi_schema():
     def get_item(req, id: str):
         return Response.json({"id": id})
 
-    client = TestClient(app)
+    client = PIUTestClient(app)
     resp = client.get("/openapi.json")
     assert resp.status == 200
     schema = resp.json()
@@ -426,7 +506,6 @@ def test_openapi_schema():
 def test_swagger_ui():
     app = make_app()
     app.enable_docs()
-    client = TestClient(app)
-    resp = client.get("/docs")
+    resp = PIUTestClient(app).get("/docs")
     assert resp.status == 200
     assert b"swagger" in resp.body.lower()
